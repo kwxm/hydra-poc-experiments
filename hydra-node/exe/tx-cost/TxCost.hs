@@ -55,6 +55,7 @@ import Hydra.Chain.Direct.Context (
   HydraContext (ctxVerificationKeys),
   ctxHeadParameters,
   executeCommits,
+  genCloseTx,
   genCollectComTx,
   genCommits,
   genHydraContextFor,
@@ -187,6 +188,24 @@ computeCollectComCost =
       [1 .. 100]
       ( \numParties -> do
           (st, tx) <- generate $ genCollectComTx numParties
+          let utxo = getKnownUTxO st
+          let txSize = LBS.length $ serialize tx
+          if txSize < fromIntegral (Ledger._maxTxSize pparams)
+            then case evaluateTx tx utxo of
+              (Right (mconcat . rights . Map.elems -> (Ledger.ExUnits mem cpu)))
+                | fromIntegral mem <= maxMem && fromIntegral cpu <= maxCpu ->
+                  pure $ Just (NumParties numParties, TxSize txSize, MemUnit mem, CpuUnit cpu)
+              _ -> pure Nothing
+            else pure Nothing
+      )
+
+computeCloseCost :: IO [(NumParties, TxSize, MemUnit, CpuUnit)]
+computeCloseCost =
+  catMaybes
+    <$> forM
+      [1 .. 100]
+      ( \numParties -> do
+          (st, tx) <- generate $ genCloseTx numParties
           let utxo = getKnownUTxO st
           let txSize = LBS.length $ serialize tx
           if txSize < fromIntegral (Ledger._maxTxSize pparams)

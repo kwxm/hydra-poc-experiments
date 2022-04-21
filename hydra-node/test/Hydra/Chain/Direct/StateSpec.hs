@@ -44,6 +44,7 @@ import Hydra.Chain.Direct.Context (
   ctxHeadParameters,
   ctxParties,
   executeCommits,
+  genCloseTx,
   genCollectComTx,
   genCommit,
   genCommits,
@@ -51,6 +52,7 @@ import Hydra.Chain.Direct.Context (
   genInitTx,
   genStIdle,
   genStInitialized,
+  genStOpen,
   unsafeCommit,
   unsafeObserveTx,
  )
@@ -65,7 +67,6 @@ import Hydra.Chain.Direct.State (
   TransitionFrom (..),
   abort,
   close,
-  collect,
   fanout,
   getKnownUTxO,
   idleOnChainHeadState,
@@ -81,8 +82,6 @@ import Hydra.Ledger.Cardano (
   simplifyUTxO,
  )
 import Hydra.Ledger.Cardano.Evaluate (evaluateTx')
-import qualified Hydra.Party as Hydra
-import Hydra.Snapshot (ConfirmedSnapshot (..), isInitialSnapshot)
 import Ouroboros.Consensus.Block (Point, blockPoint)
 import Ouroboros.Consensus.Cardano.Block (HardForkBlock (BlockAlonzo))
 import Ouroboros.Consensus.Shelley.Ledger (mkShelleyBlock)
@@ -482,16 +481,8 @@ forAllClose ::
   (OnChainHeadState 'StOpen -> Tx -> property) ->
   Property
 forAllClose action = do
-  forAll (genHydraContext 3) $ \ctx ->
-    forAll (genStOpen ctx) $ \stOpen ->
-      forAll (genConfirmedSnapshot (ctxHydraSigningKeys ctx)) $ \snapshot ->
-        action stOpen (close snapshot stOpen)
-          & classify
-            (isInitialSnapshot snapshot)
-            "Close with initial snapshot"
-          & classify
-            (not (isInitialSnapshot snapshot))
-            "Close with multi-signed snapshot"
+  -- TODO: label / classify tx and snapshots to understand test failures
+  forAll (genCloseTx 3) $ uncurry action
 
 forAllFanout ::
   (Testable property) =>
@@ -518,16 +509,6 @@ forAllFanout action = do
 -- Generators
 --
 
-genStOpen ::
-  HydraContext ->
-  Gen (OnChainHeadState 'StOpen)
-genStOpen ctx = do
-  initTx <- genInitTx ctx
-  commits <- genCommits ctx initTx
-  stInitialized <- executeCommits initTx commits <$> genStIdle ctx
-  let collectComTx = collect stInitialized
-  pure $ snd $ unsafeObserveTx @_ @ 'StOpen collectComTx stInitialized
-
 genStClosed ::
   HydraContext ->
   Gen (OnChainHeadState 'StClosed)
@@ -546,12 +527,6 @@ genBlockAt sl txs = do
   adjustSlot (Ledger.BHeader body sig) =
     let body' = body{Ledger.bheaderSlotNo = sl}
      in Ledger.BHeader body' sig
-
-genConfirmedSnapshot :: [Hydra.SigningKey] -> Gen (ConfirmedSnapshot Tx)
-genConfirmedSnapshot sks = do
-  snapshot <- arbitrary
-  let signatures = Hydra.aggregate $ fmap (`Hydra.sign` snapshot) sks
-  pure $ ConfirmedSnapshot{snapshot, signatures}
 
 --
 -- Wrapping Transition for easy labelling
