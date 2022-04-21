@@ -79,7 +79,9 @@ import Hydra.Ledger.Cardano (
   simplifyUTxO,
  )
 import Hydra.Ledger.Cardano.Evaluate (evaluateTx')
-import Hydra.Snapshot (isInitialSnapshot)
+import Hydra.Party (SigningKey)
+import qualified Hydra.Party as Hydra
+import Hydra.Snapshot (ConfirmedSnapshot, isInitialSnapshot)
 import Ouroboros.Consensus.Block (Point, blockPoint)
 import Ouroboros.Consensus.Cardano.Block (HardForkBlock (BlockAlonzo))
 import Ouroboros.Consensus.Shelley.Ledger (mkShelleyBlock)
@@ -174,6 +176,7 @@ spec = parallel $ do
 
   describe "close" $ do
     propBelowSizeLimit maxTxSize forAllClose
+    propIsValid maxTxExecutionUnits forAllClose
 
   describe "fanout" $ do
     propBelowSizeLimit maxTxSize forAllFanout
@@ -485,7 +488,7 @@ forAllClose ::
 forAllClose action = do
   forAll (genHydraContext 3) $ \ctx ->
     forAll (genStOpen ctx) $ \stOpen ->
-      forAll arbitrary $ \snapshot ->
+      forAll (genConfirmedSnapshot (ctxHydraSigningKeys ctx)) $ \snapshot ->
         action stOpen (close snapshot stOpen)
           & classify
             (isInitialSnapshot snapshot)
@@ -547,6 +550,9 @@ genBlockAt sl txs = do
   adjustSlot (Ledger.BHeader body sig) =
     let body' = body{Ledger.bheaderSlotNo = sl}
      in Ledger.BHeader body' sig
+
+genConfirmedSnapshot :: [Hydra.SigningKey] -> Gen (ConfirmedSnapshot Tx)
+genConfirmedSnapshot = undefined
 
 --
 -- Wrapping Transition for easy labelling
