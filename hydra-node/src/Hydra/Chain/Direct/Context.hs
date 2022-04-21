@@ -18,6 +18,7 @@ import Hydra.Chain.Direct.State (
   HeadStateKind (..),
   ObserveTx,
   OnChainHeadState,
+  collect,
   commit,
   idleOnChainHeadState,
   initialize,
@@ -121,6 +122,15 @@ genCommit =
     [ (1, pure mempty)
     , (10, genVerificationKey >>= genOneUTxOFor)
     ]
+
+genCollectComTx :: Int -> Gen (OnChainHeadState 'StInitialized, Tx)
+genCollectComTx numParties = do
+  ctx <- genHydraContextFor numParties
+  initTx <- genInitTx ctx
+  commits <- genCommits ctx initTx
+  stIdle <- genStIdle ctx
+  let stInitialized = executeCommits initTx commits stIdle
+  pure (stInitialized, collect stInitialized)
 
 --
 -- Here be dragons

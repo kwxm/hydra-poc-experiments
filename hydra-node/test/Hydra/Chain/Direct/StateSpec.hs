@@ -44,6 +44,7 @@ import Hydra.Chain.Direct.Context (
   ctxHeadParameters,
   ctxParties,
   executeCommits,
+  genCollectComTx,
   genCommit,
   genCommits,
   genHydraContext,
@@ -342,7 +343,7 @@ propBelowSizeLimit ::
   SpecWith ()
 propBelowSizeLimit txSizeLimit forAllTx =
   prop ("transaction size is below " <> showKB txSizeLimit) $
-    forAllTx $ \_st tx ->
+    forAllTx $ \_ tx ->
       let cbor = serialize tx
           len = LBS.length cbor
        in len < txSizeLimit
@@ -360,20 +361,20 @@ propIsValid ::
   SpecWith ()
 propIsValid exUnits forAllTx =
   prop ("validates within " <> show exUnits) $
-    forAllTx $ \st tx ->
+    forAllTx $ \st tx -> do
       let lookupUTxO = getKnownUTxO st
-       in case evaluateTx' exUnits tx lookupUTxO of
-            Left basicFailure ->
-              property False
-                & counterexample ("Tx: " <> renderTx tx)
-                & counterexample ("Lookup utxo: " <> decodeUtf8 (encodePretty lookupUTxO))
-                & counterexample ("Phase-1 validation failed: " <> show basicFailure)
-            Right redeemerReport ->
-              all isRight (Map.elems redeemerReport)
-                & counterexample ("Tx: " <> renderTx tx)
-                & counterexample ("Lookup utxo: " <> decodeUtf8 (encodePretty lookupUTxO))
-                & counterexample ("Redeemer report: " <> show redeemerReport)
-                & counterexample "Phase-2 validation failed"
+      case evaluateTx' exUnits tx lookupUTxO of
+        Left basicFailure ->
+          property False
+            & counterexample ("Tx: " <> renderTx tx)
+            & counterexample ("Lookup utxo: " <> decodeUtf8 (encodePretty lookupUTxO))
+            & counterexample ("Phase-1 validation failed: " <> show basicFailure)
+        Right redeemerReport ->
+          all isRight (Map.elems redeemerReport)
+            & counterexample ("Tx: " <> renderTx tx)
+            & counterexample ("Lookup utxo: " <> decodeUtf8 (encodePretty lookupUTxO))
+            & counterexample ("Redeemer report: " <> show redeemerReport)
+            & counterexample "Phase-2 validation failed"
 
 --
 -- QuickCheck Extras
@@ -473,13 +474,8 @@ forAllCollectCom ::
   (Testable property) =>
   (OnChainHeadState 'StInitialized -> Tx -> property) ->
   Property
-forAllCollectCom action = do
-  forAll (genHydraContext 3) $ \ctx ->
-    forAllShow (genInitTx ctx) renderTx $ \initTx -> do
-      forAllShow (genCommits ctx initTx) renderTxs $ \commits ->
-        forAll (genStIdle ctx) $ \stIdle ->
-          let stInitialized = executeCommits initTx commits stIdle
-           in action stInitialized (collect stInitialized)
+forAllCollectCom action =
+  forAll (genCollectComTx 3) $ uncurry action
 
 forAllClose ::
   (Testable property) =>
